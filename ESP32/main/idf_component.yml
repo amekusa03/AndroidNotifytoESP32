@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.0"
+  lovyan03/LovyanGFX:
+    git: https://github.com/lovyan03/LovyanGFX.git

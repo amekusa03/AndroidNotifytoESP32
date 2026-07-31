@@ -1,0 +1,29 @@
+#pragma once
+
+// ==========================================
+// ネットワーク・接続設定のテンプレート
+// ※このファイルをコピーして wifi_settings.h を作成してください
+// ==========================================
+
+// WiFi設定
+#define WIFI_SSID "your_ssid"
+#define WIFI_PASS "your_password"
+
+// TCPサーバーポート設定
+#define TCP_PORT 5555
+
+// 固定IP設定
+#define IP_ADDR_0 192
+#define IP_ADDR_1 168
+#define IP_ADDR_2 11
+#define IP_ADDR_3 100
+
+#define GW_ADDR_0 192
+#define GW_ADDR_1 168
+#define GW_ADDR_2 11
+#define GW_ADDR_3 1
+
+#define NETMASK_0 255
+#define NETMASK_1 255
+#define NETMASK_2 255
+#define NETMASK_3 0
