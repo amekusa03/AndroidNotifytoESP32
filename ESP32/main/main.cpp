@@ -123,7 +123,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
             ESP_LOGI(TAG, "ESP_SPP_START_EVT: SPP サーバー起動完了 (handle:%" PRIu32 ")", param->start.handle);
             esp_bt_dev_set_device_name(BT_DEVICE_NAME);
             esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-            lcd_show_status("ESP32 Notify", "BT Waiting...");
+//            lcd_show_status("ESP32 Notify", "BT Waiting...");
         } else {
             ESP_LOGE(TAG, "ESP_SPP_START_EVT エラー status: %d", param->start.status);
         }
@@ -132,7 +132,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     case ESP_SPP_SRV_OPEN_EVT:
         ESP_LOGI(TAG, "ESP_SPP_SRV_OPEN_EVT: クライアント接続完了 (handle:%" PRIu32 ")", param->srv_open.handle);
         s_rx_received = 0;
-        lcd_show_status("ESP32 Notify", "BT Connected!", TFT_BLACK, TFT_GREEN, TFT_CYAN);
+//        lcd_show_status("ESP32 Notify", "BT Connected!", TFT_BLACK, TFT_GREEN, TFT_CYAN);
         break;
 
     case ESP_SPP_CLOSE_EVT:
