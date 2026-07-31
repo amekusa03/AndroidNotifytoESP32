@@ -16,18 +16,24 @@
 #include "esp_spp_api.h"
 #include "esp_bt_device.h"
 
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include "bt_settings.h"
+#include "wifi_settings.h"
 
-static const char *TAG = "notify_bt";
+static const char *TAG = "notify_app";
 
 static const int WIDTH       = 320;
 static const int HEIGHT      = 170;
 static const size_t BUF_SIZE = WIDTH * HEIGHT * 2;  // RGB565 (108,800 bytes)
-
-static uint8_t *s_rx_buf = NULL;
-static size_t s_rx_received = 0;
 
 // ── LCD ミューテックスとタイマー ─────────────────────────
 static SemaphoreHandle_t s_lcd_mutex = NULL;
@@ -87,25 +93,12 @@ static void backlight_timer_cb(TimerHandle_t xTimer) {
     }
 }
 
-// ── LCD ヘルパー（ミューテックス保護済み）────────────────
-static void lcd_show_status(const char *l1, const char *l2,
-                             uint32_t bg = TFT_BLACK, uint32_t title_color = TFT_GREEN, uint32_t content_color = TFT_BLUE) {
-    if (!s_lcd_mutex) return;
-    xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
-    lcd.wakeup();
-    lcd.fillScreen(bg);
-    lcd.setTextColor(title_color);
-    lcd.drawString(l1, 10, 10);
-    if (l2) {
-        lcd.setTextColor(content_color);
-        lcd.drawString(l2, 10, 32);
-    }
-    xSemaphoreGive(s_lcd_mutex);
-}
+
 
 // ── Bluetooth GAP / SPP 設定 ──────────────────────────────
 static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
 static const esp_spp_role_t role_slave = ESP_SPP_ROLE_SLAVE;
+static size_t s_bt_rx_received = 0;
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     switch (event) {
@@ -123,7 +116,6 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
             ESP_LOGI(TAG, "ESP_SPP_START_EVT: SPP サーバー起動完了 (handle:%" PRIu32 ")", param->start.handle);
             esp_bt_dev_set_device_name(BT_DEVICE_NAME);
             esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-//            lcd_show_status("ESP32 Notify", "BT Waiting...");
         } else {
             ESP_LOGE(TAG, "ESP_SPP_START_EVT エラー status: %d", param->start.status);
         }
@@ -131,60 +123,48 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 
     case ESP_SPP_SRV_OPEN_EVT:
         ESP_LOGI(TAG, "ESP_SPP_SRV_OPEN_EVT: クライアント接続完了 (handle:%" PRIu32 ")", param->srv_open.handle);
-        s_rx_received = 0;
-//        lcd_show_status("ESP32 Notify", "BT Connected!", TFT_BLACK, TFT_GREEN, TFT_CYAN);
+        s_bt_rx_received = 0;
         break;
 
     case ESP_SPP_CLOSE_EVT:
         ESP_LOGI(TAG, "ESP_SPP_CLOSE_EVT: 接続切断");
-        s_rx_received = 0;
+        if (s_bt_rx_received > 0 && s_bt_rx_received < BUF_SIZE) {
+            if (s_lcd_mutex) {
+                xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+                lcd.endWrite();
+                xSemaphoreGive(s_lcd_mutex);
+            }
+        }
+        s_bt_rx_received = 0;
         break;
 
     case ESP_SPP_DATA_IND_EVT:
         if (param->data_ind.len > 0 && param->data_ind.data != NULL) {
-            size_t copy_len = param->data_ind.len;
-            if (s_rx_received + copy_len > BUF_SIZE) {
-                copy_len = BUF_SIZE - s_rx_received;
-            }
-            if (copy_len > 0 && s_rx_buf != NULL) {
-                memcpy(s_rx_buf + s_rx_received, param->data_ind.data, copy_len);
-                s_rx_received += copy_len;
-            }
-
-            // BUF_SIZE (108,800 バイト) のデータ受領が完了した場合
-            if (s_rx_received >= BUF_SIZE) {
-                ESP_LOGI(TAG, "画像データ全受信完了 (%zu bytes)", s_rx_received);
-
-                // ディスプレイのスリープ解除
-                xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+            if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+            if (s_bt_rx_received == 0) {
                 lcd.wakeup();
-                xSemaphoreGive(s_lcd_mutex);
-
-                // バックライトをON(1)にし、10秒タイマーをリセット
                 gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
-                if (s_bl_timer) {
-                    xTimerReset(s_bl_timer, 0);
-                }
-
-                // スライドインアニメーション
-                const int steps = 15;
-                for (int i = 0; i <= steps; i++) {
-                    float t = (float)i / steps;
-                    float ease = 1.0f - (1.0f - t) * (1.0f - t); // Ease-Out Quad
-                    int y = (int)(-HEIGHT + ease * HEIGHT);
-
-                    xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
-                    lcd.startWrite();
-                    lcd.pushImage(0, y, WIDTH, HEIGHT, (lgfx::rgb565_t*)s_rx_buf);
-                    lcd.endWrite();
-                    xSemaphoreGive(s_lcd_mutex);
-
-                    vTaskDelay(pdMS_TO_TICKS(15));
-                }
-
-                ESP_LOGI(TAG, "LCD 描画完了 (スライドインアニメーション)");
-                s_rx_received = 0;  // 次の受信に備えてクリア
+                if (s_bl_timer) xTimerReset(s_bl_timer, 0);
+                lcd.startWrite();
+                lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
             }
+
+            size_t copy_len = param->data_ind.len;
+            if (s_bt_rx_received + copy_len > BUF_SIZE) {
+                copy_len = BUF_SIZE - s_bt_rx_received;
+            }
+
+            if (copy_len >= 2) {
+                lcd.writePixels((const lgfx::rgb565_t*)param->data_ind.data, copy_len / 2);
+                s_bt_rx_received += copy_len;
+            }
+
+            if (s_bt_rx_received >= BUF_SIZE) {
+                ESP_LOGI(TAG, "BT 画像データ全受信・描画完了 (%zu bytes)", s_bt_rx_received);
+                lcd.endWrite();
+                s_bt_rx_received = 0;
+            }
+            if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
         }
         break;
 
@@ -273,6 +253,174 @@ static void bt_init() {
     esp_bt_gap_set_security_param(param_type, &iocap, sizeof(uint8_t));
 }
 
+// ── Wi-Fi STA および TCP サーバー設定 ─────────────────────
+static bool s_wifi_connected = false;
+static char s_wifi_ip_str[32] = "WiFi Connecting...";
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        s_wifi_connected = false;
+        snprintf(s_wifi_ip_str, sizeof(s_wifi_ip_str), "WiFi Disconnected");
+        ESP_LOGI(TAG, "WiFi 切断, 再接続中...");
+        esp_wifi_connect();
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        s_wifi_connected = true;
+        snprintf(s_wifi_ip_str, sizeof(s_wifi_ip_str), "IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "WiFi 接続完了, %s", s_wifi_ip_str);
+    }
+}
+
+static void wifi_init_sta(void) {
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+
+#if defined(IP_ADDR_0) && defined(IP_ADDR_1) && defined(IP_ADDR_2) && defined(IP_ADDR_3)
+    esp_netif_dhcpc_stop(sta_netif);
+    esp_netif_ip_info_t ip_info;
+    IP4_ADDR(&ip_info.ip, IP_ADDR_0, IP_ADDR_1, IP_ADDR_2, IP_ADDR_3);
+    IP4_ADDR(&ip_info.gw, GW_ADDR_0, GW_ADDR_1, GW_ADDR_2, GW_ADDR_3);
+    IP4_ADDR(&ip_info.netmask, NETMASK_0, NETMASK_1, NETMASK_2, NETMASK_3);
+    esp_netif_set_ip_info(sta_netif, &ip_info);
+    ESP_LOGI(TAG, "固定IP設定: %d.%d.%d.%d", IP_ADDR_0, IP_ADDR_1, IP_ADDR_2, IP_ADDR_3);
+#endif
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    wifi_config_t wifi_config = {};
+    strlcpy((char*)wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    strlcpy((char*)wifi_config.sta.password, WIFI_PASS, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "WiFi 初期化完了 (SSID: %s)", WIFI_SSID);
+}
+
+static void tcp_server_task(void *pvParameters) {
+    uint8_t rx_chunk[2048];
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(TCP_PORT);
+
+    int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (listen_sock < 0) {
+        ESP_LOGE(TAG, "TCP ソケット作成失敗: errno %d", errno);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    if (bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) {
+        ESP_LOGE(TAG, "TCP Bind 失敗: errno %d", errno);
+        close(listen_sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (listen(listen_sock, 1) < 0) {
+        ESP_LOGE(TAG, "TCP Listen 失敗: errno %d", errno);
+        close(listen_sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "TCP サーバー起動完了 (Port: %d)", TCP_PORT);
+
+    while (1) {
+        struct sockaddr_in source_addr;
+        socklen_t addr_len = sizeof(source_addr);
+        int sock = accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "TCP Accept 失敗: errno %d", errno);
+            break;
+        }
+
+        char addr_str[128];
+        inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+        ESP_LOGI(TAG, "TCP クライアント接続: %s", addr_str);
+
+        size_t total_received = 0;
+        size_t leftover_len = 0;
+
+        if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+        lcd.wakeup();
+        gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
+        if (s_bl_timer) xTimerReset(s_bl_timer, 0);
+        lcd.startWrite();
+        lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
+        if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+
+        while (total_received < BUF_SIZE) {
+            size_t to_recv = BUF_SIZE - total_received;
+            if (to_recv > (sizeof(rx_chunk) - leftover_len)) {
+                to_recv = sizeof(rx_chunk) - leftover_len;
+            }
+
+            int len = recv(sock, rx_chunk + leftover_len, to_recv, 0);
+            if (len <= 0) {
+                if (len < 0) ESP_LOGE(TAG, "TCP recv エラー: errno %d", errno);
+                else ESP_LOGW(TAG, "TCP 切断 (受信: %zu bytes)", total_received);
+                break;
+            }
+
+            size_t available_bytes = leftover_len + len;
+            size_t pixel_bytes = available_bytes & ~((size_t)1);
+
+            if (pixel_bytes > 0) {
+                if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+                lcd.writePixels((const lgfx::rgb565_t*)rx_chunk, pixel_bytes / 2);
+                if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+
+                total_received += pixel_bytes;
+                leftover_len = available_bytes - pixel_bytes;
+
+                if (leftover_len > 0) {
+                    rx_chunk[0] = rx_chunk[pixel_bytes];
+                }
+            } else {
+                leftover_len = available_bytes;
+            }
+        }
+
+        if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+        lcd.endWrite();
+        if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+
+        if (total_received >= BUF_SIZE) {
+            ESP_LOGI(TAG, "TCP 画像データ全受信・描画完了 (%zu bytes)", total_received);
+        }
+
+        shutdown(sock, 0);
+        close(sock);
+    }
+
+    close(listen_sock);
+    vTaskDelete(NULL);
+}
+
 // ── エントリーポイント ───────────────────────────────────
 extern "C" void app_main() {
     // NVS 初期化
@@ -282,13 +430,6 @@ extern "C" void app_main() {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-
-    // 受信バッファの確保
-    s_rx_buf = (uint8_t *)malloc(BUF_SIZE);
-    if (!s_rx_buf) {
-        ESP_LOGE(TAG, "受信バッファの malloc 失敗");
-        return;
-    }
 
     // LCD ミューテックス作成
     s_lcd_mutex = xSemaphoreCreateMutex();
@@ -307,7 +448,7 @@ extern "C" void app_main() {
     lcd.setTextSize(2);
     lcd.drawString("ESP32 Notify", 10, 10);
     lcd.setTextColor(TFT_BLUE);
-    lcd.drawString("BT Starting...", 10, 40);
+    lcd.drawString("WiFi/BT Init...", 10, 40);
 
     // バックライト消灯用の10秒タイマーを作成＆スタート
     s_bl_timer = xTimerCreate("bl_timer", pdMS_TO_TICKS(10000), pdFALSE, (void*)0, backlight_timer_cb);
@@ -315,8 +456,16 @@ extern "C" void app_main() {
         xTimerStart(s_bl_timer, 0);
     }
 
+    // Wi-Fi 初期化
+    wifi_init_sta();
+
     // Bluetooth 初期化
     bt_init();
 
-    ESP_LOGI(TAG, "起動完了");
+    // TCP サーバータスク作成
+    xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 5, NULL);
+
+    ESP_LOGI(TAG, "起動完了 (BT + WiFi Dual Mode / Stream Direct)");
 }
+
+

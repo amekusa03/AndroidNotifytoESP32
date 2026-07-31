@@ -6,4 +6,9 @@ idf_component_register(
         bt
         nvs_flash
         driver
+        esp_wifi
+        esp_event
+        esp_netif
+        lwip
 )
+

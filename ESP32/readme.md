@@ -1,6 +1,6 @@
 # ESP32 Ubuntu通知表示システム (ESP32wrNotify)
 
-Ubuntu システムの通知（D-Bus）をキャプチャし、Bluetooth Classic (SPP: Serial Port Profile) 経由で ESP32 ディスプレイに画像として転送・表示するシステムです。
+Ubuntu システムの通知（D-Bus）をキャプチャし、Bluetooth Classic (SPP: Serial Port Profile) または Wi-Fi (TCP Socket) 経由で ESP32 ディスプレイに画像として転送・表示するシステムです。
 
 ---
 
@@ -10,7 +10,10 @@ Ubuntu システムの通知（D-Bus）をキャプチャし、Bluetooth Classic
 * **解像度**: 320 x 170 ピクセル
 * **カラー絵文字対応**: `Noto Color Emoji` によるカラー絵文字の自動レンダリング（フォールバックとして `Symbola` 等のモノクロ絵文字に対応）
 * **省電力設計**: 通知受信時にバックライトを 10 秒間点灯後、自動オフ＆ディスプレイ IC スリープ移行
-* **通信仕様**: Bluetooth Classic SPP (Serial Port Profile) 経由の RFCOMM チャンネル 1 通信（生 RGB565 画像データ転送、108,800 バイト/フレーム）
+* **通信仕様**:
+  * **Wi-Fi (TCP Socket)**: ネットワーク経由での高速画像転送 (ポート 5555)
+  * **Bluetooth Classic SPP**: RFCOMM チャンネル 1 通信 (生 RGB565 画像データ転送、108,800 バイト/フレーム)
+  * Wi-Fi / Bluetooth のデュアル待受に対応。送信側スクリプト (`ubuntu_notifier.py`) では Wi-Fi 接続優先・BT 自動フォールバック (`auto` モード) が可能です。
 
 ---
 
@@ -52,7 +55,20 @@ cp main/bt_settings.h.example main/bt_settings.h
 `main/bt_settings.h` の設定項目:
 * `BT_DEVICE_NAME`: Bluetooth デバイス名 (デフォルト: `"ESP32_Notify"`)
 
-#### 1.2 ファームウェアのビルドと書き込み
+#### 1.2 Wi-Fi 設定 (`wifi_settings.h`)
+`main/wifi_settings.h.example` をコピーして `main/wifi_settings.h` を作成し、接続先 SSID・パスワード・固定 IP 設定を編集します。
+
+```bash
+cp main/wifi_settings.h.example main/wifi_settings.h
+```
+
+`main/wifi_settings.h` の設定項目:
+* `WIFI_SSID`: 接続先 Wi-Fi の SSID
+* `WIFI_PASS`: 接続先 Wi-Fi のパスワード
+* `TCP_PORT`: TCP サーバー待受ポート (デフォルト: `5555`)
+* `IP_ADDR_0`〜`IP_ADDR_3`: 固定 IP アドレス (例: `192.168.11.100`)
+
+#### 1.3 ファームウェアのビルドと書き込み
 ESP-IDF 開発環境がセットアップされたターミナルで実行します。
 
 ```bash
@@ -77,10 +93,9 @@ sudo apt install python3-venv python3-dbus python3-gi gir1.2-glib-2.0 \
                  fonts-noto-color-emoji fonts-symbola fonts-noto-cjk bluez
 ```
 
-#### 2.2 Bluetooth ペアリング
-1. ESP32 の電源を入れ、ディスプレイに `BT Waiting...` と表示されていることを確認します。
+#### 2.2 Bluetooth ペアリング（Bluetooth 利用時）
+1. ESP32 の電源を入れます。
 2. Ubuntu の「設定」→「Bluetooth」から `ESP32_Notify` を探してペアリング（接続）を完了させます。
-   （または `bluetoothctl` コマンドで pair / trust を実施します）
 
 #### 2.3 Python 仮想環境の作成とライブラリインストール
 システムパッケージ (D-Bus / GI) を参照できるよう `--system-site-packages` オプションを指定して仮想環境を作成します。
@@ -100,7 +115,10 @@ pip install pillow
 ```
 
 #### 2.4 スクリプトの手動テスト実行
-`ubuntu_notifier.py` 内の `ESP32_BT_ADDR` に ESP32 の MAC アドレスを直接指定するか、空文字 `""` のまま自動検索機能を利用します。
+`ubuntu_notifier.py` 内の設定を必要に応じて変更します:
+* `CONNECT_MODE`: 接続モード (`"auto"`, `"wifi"`, `"bt"`, `"both"`)
+* `ESP32_IP`: ESP32 の IP アドレス (Wi-Fi 用)
+* `ESP32_BT_ADDR`: ESP32 の Bluetooth MAC アドレス (空文字 `""` で自動検索)
 
 ```bash
 python3 ubuntu_notifier.py
@@ -108,7 +126,7 @@ python3 ubuntu_notifier.py
 
 別のターミナルからテスト通知を送信して画面表示を確認します:
 ```bash
-notify-send "テスト通知" "Hello, ESP32 Bluetooth! 🚀"
+notify-send "テスト通知" "Hello, ESP32 Dual Mode! 🚀"
 ```
 
 #### 2.5 systemd ユーザーサービスによる自動起動設定
@@ -130,3 +148,4 @@ notify-send "テスト通知" "Hello, ESP32 Bluetooth! 🚀"
   ```bash
   systemctl --user restart esp32-notify.service
   ```
+
