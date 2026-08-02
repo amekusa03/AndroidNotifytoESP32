@@ -69,10 +69,23 @@
             android:hint="Bluetooth デバイス名"
             android:inputType="text"
             android:text="ESP32_Notfity"
-            app:layout_constraintBottom_toTopOf="@id/button_settings"
+            app:layout_constraintBottom_toTopOf="@id/editText_duration"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/editText_ip" />
+
+        <EditText
+            android:id="@+id/editText_duration"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="表示時間(秒) 0:永久, Max:300"
+            android:inputType="number"
+            android:text="10"
+            app:layout_constraintBottom_toTopOf="@id/button_settings"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/editText_bt_name" />
 
         <Button
             android:id="@+id/button_settings"
@@ -83,7 +96,7 @@
             app:layout_constraintBottom_toTopOf="@id/textView_history_title"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/editText_bt_name" />
+            app:layout_constraintTop_toBottomOf="@id/editText_duration" />
 
         <TextView
             android:id="@+id/textView_history_title"

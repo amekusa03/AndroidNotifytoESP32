@@ -3,6 +3,13 @@
 
 import sys
 import os
+
+# 仮想環境 (.venv) の自動適用 (システム python3 で実行された場合)
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_venv_python = os.path.join(_script_dir, '.venv', 'bin', 'python3')
+if os.path.exists(_venv_python) and sys.executable != _venv_python and os.environ.get('VIRTUAL_ENV') != os.path.dirname(os.path.dirname(_venv_python)):
+    os.execv(_venv_python, [_venv_python] + sys.argv)
+
 import time
 import struct
 import socket
@@ -18,7 +25,13 @@ sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', buffering=1)
 
 # --- 設定項目 ---
 # 接続モード: "auto" (Wi-Fi 優先 → BT フォールバック), "wifi" (Wi-Fi のみ), "bt" (Bluetooth のみ), "both" (両方に送信)
-CONNECT_MODE  = "auto"
+CONNECT_MODE     = "auto"
+
+# 表示時間 (秒): 0 = 永久表示, 1〜300秒 = 自動消灯タイマー
+DISPLAY_DURATION = 10
+
+# 16ビットRGB565のバイト順序反転 (Little-Endian): True = 有効 (デフォルト)
+SWAP_BYTES       = True
 
 # ESP32 の Wi-Fi (TCP Socket) 設定
 ESP32_IP      = "192.168.11.100"  # ESP32 の IP アドレス (例: wifi_settings.h で設定した IP)
@@ -88,18 +101,44 @@ def send_image_via_bt(raw_data: bytes | bytearray) -> bool:
         return False
 
 
-def send_image_to_esp32(img: Image.Image) -> None:
-    """画像をRGB565に変換して設定されたモードに従いESP32へ送信"""
+def send_image_to_esp32(img: Image.Image, duration: int = DISPLAY_DURATION, bgr: bool = False, invert: bool = False, color_order: str = "rgb", swap_bytes: bool = SWAP_BYTES) -> None:
+    """画像をRGB565に変換しヘッダーを付与して設定されたモードに従いESP32へ送信"""
     img = img.convert('RGB')
     pixels = img.load()
 
-    raw_data = bytearray()
+    # 表示時間のクランプ (0 〜 300秒)
+    duration_sec = max(0, min(300, int(duration)))
+
+    # プロトコルヘッダー: Magic 'NT' (2 bytes) + duration_sec (2 bytes uint16 BE)
+    raw_data = bytearray(b'NT' + struct.pack('>H', duration_sec))
+
+    order = color_order.lower()
+    if bgr:
+        order = "bgr"
+
+    pack_fmt = '<H' if swap_bytes else '>H'
+
     for y in range(HEIGHT):
         for x in range(WIDTH):
             r, g, b = pixels[x, y]
-            # RGB565: R5G6B5 ビッグエンディアン
-            rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-            raw_data.extend(struct.pack('>H', rgb565))
+            if invert:
+                r, g, b = 255 - r, 255 - g, 255 - b
+
+            if order == "rbg":
+                c1, c2, c3 = r, b, g
+            elif order == "bgr":
+                c1, c2, c3 = b, g, r
+            elif order == "brg":
+                c1, c2, c3 = b, r, g
+            elif order == "grb":
+                c1, c2, c3 = g, r, b
+            elif order == "gbr":
+                c1, c2, c3 = g, b, r
+            else:  # "rgb"
+                c1, c2, c3 = r, g, b
+
+            rgb565 = ((c1 & 0xF8) << 8) | ((c2 & 0xFC) << 3) | (c3 >> 3)
+            raw_data.extend(struct.pack(pack_fmt, rgb565))
 
     mode = CONNECT_MODE.lower()
     if mode == "wifi":
@@ -244,6 +283,30 @@ def create_notification_image(title: str, body: str) -> Image.Image:
     return img
 
 
+import argparse
+
+
+def process_custom_image(image_path: str, stretch: bool = False) -> Image.Image:
+    """指定された画像ファイルを読み込み、320x170サイズに変換"""
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"指定された画像ファイルが見つかりません: {image_path}")
+
+    with Image.open(image_path) as orig:
+        orig = orig.convert('RGB')
+        if stretch:
+            # アスペクト比無視で320x170に強制リサイズ
+            return orig.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+        else:
+            # アスペクト比維持でリサイズ ＆ 黒背景中央配置
+            fitted = orig.copy()
+            fitted.thumbnail((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+            bg = Image.new('RGB', (WIDTH, HEIGHT), (0, 0, 0))
+            offset_x = (WIDTH - fitted.width) // 2
+            offset_y = (HEIGHT - fitted.height) // 2
+            bg.paste(fitted, (offset_x, offset_y))
+            return bg
+
+
 def notification_handler(bus, message) -> None:
     """D-Bus から通知をキャッチしたときのコールバック"""
     if message.get_member() != "Notify":
@@ -260,6 +323,40 @@ def notification_handler(bus, message) -> None:
 
 
 def main() -> None:
+    global CONNECT_MODE
+
+    parser = argparse.ArgumentParser(description="ESP32 通知 & 画像送信ツール")
+    parser.add_argument("-i", "--image", type=str, help="ESP32に送信・表示する画像ファイルのパス")
+    parser.add_argument("-d", "--duration", type=int, default=DISPLAY_DURATION, help="表示時間(秒)。0=永久表示, Max=300 (デフォルト: 10)")
+    parser.add_argument("-m", "--mode", type=str, choices=["auto", "wifi", "bt", "both"], help="接続モード (auto, wifi, bt, both)")
+    parser.add_argument("--stretch", action="store_true", help="アスペクト比を無視して320x170に拡大・縮小")
+    parser.add_argument("--bgr", action="store_true", help="赤(R)と青(B)の色順を反転して送信 (BGR565)")
+    parser.add_argument("--rbg", "--swap-gb", action="store_true", help="緑(G)と青(B)の色順を反転して送信 (RBG565)")
+    parser.add_argument("--color-order", type=str, choices=["rgb", "rbg", "bgr", "brg", "grb", "gbr"], default="rgb", help="カラーチャンネル順序 (デフォルト: rgb)")
+    parser.add_argument("--invert", action="store_true", help="画像の明暗・色（ネガ）を反転して送信")
+    parser.add_argument("--swap-bytes", action="store_true", default=SWAP_BYTES, help="バイトオーダー(High/Lowバイト)を入れ替えて送信 (デフォルト: 有効)")
+    parser.add_argument("--no-swap-bytes", "--big-endian", action="store_false", dest="swap_bytes", help="バイトオーダー反転を無効化してBig-Endianで送信")
+
+    args = parser.parse_args()
+
+    if args.mode:
+        CONNECT_MODE = args.mode
+
+    color_order = args.color_order
+    if args.rbg:
+        color_order = "rbg"
+
+    if args.image:
+        print(f"指定画像送信: {args.image} (表示時間: {args.duration}秒, モード: {CONNECT_MODE}, カラー順: {color_order.upper()}, バイト反転: {args.swap_bytes})")
+        try:
+            img = process_custom_image(args.image, stretch=args.stretch)
+            send_image_to_esp32(img, duration=args.duration, bgr=args.bgr, invert=args.invert, color_order=color_order, swap_bytes=args.swap_bytes)
+            print("画像送信が正常に完了しました。")
+        except Exception as e:
+            print(f"画像送信エラー: {e}")
+        return
+
+    # 引数なしの場合は D-Bus 通知監視モードを実行
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SessionBus()
 
@@ -283,6 +380,7 @@ def main() -> None:
 
     print(f"通知監視開始 (モード: {CONNECT_MODE}, Wi-Fi: {ESP32_IP}:{TCP_PORT}, BT: {ESP32_BT_ADDR or 'Auto'})")
     print("テスト: notify-send 'タイトル' '本文'")
+    print("画像直接送信例: python3 ubuntu_notifier.py -i sample.png -d 30")
 
     try:
         GLib.MainLoop().run()

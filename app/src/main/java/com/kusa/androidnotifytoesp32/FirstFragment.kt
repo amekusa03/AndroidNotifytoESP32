@@ -50,6 +50,7 @@ class FirstFragment : Fragment() {
         
         binding.editTextIp.setText(prefs.getString("esp32_ip", "192.168.11.100"))
         binding.editTextBtName.setText(prefs.getString("bt_name", "ESP32_Notfity"))
+        binding.editTextDuration.setText(prefs.getInt("display_duration", 10).toString())
         
         val mode = prefs.getString("mode", "TCP")
         if (mode == "BT") {
@@ -63,6 +64,10 @@ class FirstFragment : Fragment() {
         }
         binding.editTextBtName.addTextChangedListener {
             prefs.edit().putString("bt_name", it.toString()).apply()
+        }
+        binding.editTextDuration.addTextChangedListener { text ->
+            val duration = text.toString().toIntOrNull()?.coerceIn(0, 300) ?: 10
+            prefs.edit().putInt("display_duration", duration).apply()
         }
         binding.radioGroupMode.setOnCheckedChangeListener { _, checkedId ->
             val newMode = if (checkedId == R.id.radioButton_bt) "BT" else "TCP"

@@ -99,6 +99,33 @@ static void backlight_timer_cb(TimerHandle_t xTimer) {
 static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
 static const esp_spp_role_t role_slave = ESP_SPP_ROLE_SLAVE;
 static size_t s_bt_rx_received = 0;
+static uint8_t s_bt_header_buf[4];
+static size_t s_bt_header_bytes = 0;
+static bool s_bt_header_checked = false;
+
+// ── ディスプレイ表示時間制御関数 ────────────────────────
+static void apply_display_duration(uint16_t duration_sec) {
+    if (duration_sec > 300) {
+        duration_sec = 300;
+    }
+    ESP_LOGI(TAG, "表示時間設定: %u 秒", duration_sec);
+
+    gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
+    lcd.wakeup();
+
+    if (duration_sec == 0) {
+        // 0秒: 次の送信まで永久表示（タイマー停止）
+        if (s_bl_timer) {
+            xTimerStop(s_bl_timer, 0);
+        }
+    } else {
+        // 1〜300秒: 指定秒数後に自動消灯
+        if (s_bl_timer) {
+            xTimerChangePeriod(s_bl_timer, pdMS_TO_TICKS(duration_sec * 1000), 0);
+            xTimerReset(s_bl_timer, 0);
+        }
+    }
+}
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     switch (event) {
@@ -124,6 +151,8 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     case ESP_SPP_SRV_OPEN_EVT:
         ESP_LOGI(TAG, "ESP_SPP_SRV_OPEN_EVT: クライアント接続完了 (handle:%" PRIu32 ")", param->srv_open.handle);
         s_bt_rx_received = 0;
+        s_bt_header_bytes = 0;
+        s_bt_header_checked = false;
         break;
 
     case ESP_SPP_CLOSE_EVT:
@@ -136,33 +165,63 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
             }
         }
         s_bt_rx_received = 0;
+        s_bt_header_bytes = 0;
+        s_bt_header_checked = false;
         break;
 
     case ESP_SPP_DATA_IND_EVT:
         if (param->data_ind.len > 0 && param->data_ind.data != NULL) {
             if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
-            if (s_bt_rx_received == 0) {
-                lcd.wakeup();
-                gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
-                if (s_bl_timer) xTimerReset(s_bl_timer, 0);
-                lcd.startWrite();
-                lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
+
+            const uint8_t *src = param->data_ind.data;
+            size_t src_len = param->data_ind.len;
+            size_t src_idx = 0;
+
+            if (!s_bt_header_checked) {
+                while (src_idx < src_len && s_bt_header_bytes < 4) {
+                    s_bt_header_buf[s_bt_header_bytes++] = src[src_idx++];
+                }
+                if (s_bt_header_bytes == 4) {
+                    s_bt_header_checked = true;
+                    uint16_t duration_sec = 10;
+                    size_t unhandled_hdr_pixel_bytes = 0;
+                    if (s_bt_header_buf[0] == 'N' && s_bt_header_buf[1] == 'T') {
+                        duration_sec = ((uint16_t)s_bt_header_buf[2] << 8) | s_bt_header_buf[3];
+                        ESP_LOGI(TAG, "BT ヘッダー検出: 表示時間 %u 秒", duration_sec);
+                    } else {
+                        duration_sec = 10;
+                        unhandled_hdr_pixel_bytes = 4;
+                        ESP_LOGI(TAG, "BT ヘッダーなし: デフォルト 10 秒");
+                    }
+
+                    apply_display_duration(duration_sec);
+                    lcd.startWrite();
+                    lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
+
+                    if (unhandled_hdr_pixel_bytes > 0) {
+                        lcd.writePixels((const lgfx::rgb565_t*)s_bt_header_buf, unhandled_hdr_pixel_bytes / 2);
+                        s_bt_rx_received += unhandled_hdr_pixel_bytes;
+                    }
+                }
             }
 
-            size_t copy_len = param->data_ind.len;
-            if (s_bt_rx_received + copy_len > BUF_SIZE) {
-                copy_len = BUF_SIZE - s_bt_rx_received;
-            }
-
-            if (copy_len >= 2) {
-                lcd.writePixels((const lgfx::rgb565_t*)param->data_ind.data, copy_len / 2);
-                s_bt_rx_received += copy_len;
+            if (s_bt_header_checked && src_idx < src_len) {
+                size_t remaining_bytes = src_len - src_idx;
+                if (s_bt_rx_received + remaining_bytes > BUF_SIZE) {
+                    remaining_bytes = BUF_SIZE - s_bt_rx_received;
+                }
+                if (remaining_bytes >= 2) {
+                    lcd.writePixels((const lgfx::rgb565_t*)(src + src_idx), remaining_bytes / 2);
+                    s_bt_rx_received += remaining_bytes & ~((size_t)1);
+                }
             }
 
             if (s_bt_rx_received >= BUF_SIZE) {
                 ESP_LOGI(TAG, "BT 画像データ全受信・描画完了 (%zu bytes)", s_bt_rx_received);
                 lcd.endWrite();
                 s_bt_rx_received = 0;
+                s_bt_header_bytes = 0;
+                s_bt_header_checked = false;
             }
             if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
         }
@@ -364,19 +423,12 @@ static void tcp_server_task(void *pvParameters) {
 
         size_t total_received = 0;
         size_t leftover_len = 0;
-
-        if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
-        lcd.wakeup();
-        gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
-        if (s_bl_timer) xTimerReset(s_bl_timer, 0);
-        lcd.startWrite();
-        lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
-        if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+        bool header_checked = false;
 
         while (total_received < BUF_SIZE) {
-            size_t to_recv = BUF_SIZE - total_received;
-            if (to_recv > (sizeof(rx_chunk) - leftover_len)) {
-                to_recv = sizeof(rx_chunk) - leftover_len;
+            size_t to_recv = sizeof(rx_chunk) - leftover_len;
+            if (to_recv > (BUF_SIZE - total_received + (header_checked ? 0 : 4))) {
+                to_recv = BUF_SIZE - total_received + (header_checked ? 0 : 4);
             }
 
             int len = recv(sock, rx_chunk + leftover_len, to_recv, 0);
@@ -387,21 +439,57 @@ static void tcp_server_task(void *pvParameters) {
             }
 
             size_t available_bytes = leftover_len + len;
-            size_t pixel_bytes = available_bytes & ~((size_t)1);
+            size_t data_offset = 0;
+
+            if (!header_checked) {
+                if (available_bytes >= 4) {
+                    header_checked = true;
+                    uint16_t duration_sec = 10;
+                    if (rx_chunk[0] == 'N' && rx_chunk[1] == 'T') {
+                        duration_sec = ((uint16_t)rx_chunk[2] << 8) | rx_chunk[3];
+                        data_offset = 4;
+                        ESP_LOGI(TAG, "TCP ヘッダー検出: 表示時間 %u 秒", duration_sec);
+                    } else {
+                        duration_sec = 10;
+                        data_offset = 0;
+                        ESP_LOGI(TAG, "TCP ヘッダーなし: デフォルト 10 秒");
+                    }
+
+                    if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+                    apply_display_duration(duration_sec);
+                    lcd.startWrite();
+                    lcd.setAddrWindow(0, 0, WIDTH, HEIGHT);
+                    if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+                } else {
+                    leftover_len = available_bytes;
+                    continue;
+                }
+            }
+
+            const uint8_t *pixel_src = rx_chunk + data_offset;
+            size_t pixel_avail = available_bytes - data_offset;
+            if (total_received + pixel_avail > BUF_SIZE) {
+                pixel_avail = BUF_SIZE - total_received;
+            }
+
+            size_t pixel_bytes = pixel_avail & ~((size_t)1);
 
             if (pixel_bytes > 0) {
                 if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
-                lcd.writePixels((const lgfx::rgb565_t*)rx_chunk, pixel_bytes / 2);
+                lcd.writePixels((const lgfx::rgb565_t*)pixel_src, pixel_bytes / 2);
                 if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
 
                 total_received += pixel_bytes;
-                leftover_len = available_bytes - pixel_bytes;
+                leftover_len = (available_bytes - data_offset) - pixel_bytes;
 
                 if (leftover_len > 0) {
-                    rx_chunk[0] = rx_chunk[pixel_bytes];
+                    memmove(rx_chunk, pixel_src + pixel_bytes, leftover_len);
                 }
             } else {
-                leftover_len = available_bytes;
+                leftover_len = available_bytes - data_offset;
+                if (data_offset > 0 && leftover_len > 0) {
+                    memmove(rx_chunk, pixel_src, leftover_len);
+                }
             }
         }
 

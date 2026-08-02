@@ -1,6 +1,6 @@
 # ESP32 Ubuntu通知表示システム (ESP32wrNotify)
 
-Ubuntu システムの通知（D-Bus）をキャプチャし、Bluetooth Classic (SPP: Serial Port Profile) または Wi-Fi (TCP Socket) 経由で ESP32 ディスプレイに画像として転送・表示するシステムです。
+Ubuntu システムの通知（D-Bus）をキャプチャ、または任意の画像ファイルを指定して、Bluetooth Classic (SPP: Serial Port Profile) または Wi-Fi (TCP Socket) 経由で ESP32 ディスプレイに画像として転送・表示するシステムです。
 
 ---
 
@@ -9,10 +9,18 @@ Ubuntu システムの通知（D-Bus）をキャプチャし、Bluetooth Classic
 * **ディスプレイ**: 1.9インチ ST7789V3 LCD
 * **解像度**: 320 x 170 ピクセル
 * **カラー絵文字対応**: `Noto Color Emoji` によるカラー絵文字の自動レンダリング（フォールバックとして `Symbola` 等のモノクロ絵文字に対応）
-* **省電力設計**: 通知受信時にバックライトを 10 秒間点灯後、自動オフ＆ディスプレイ IC スリープ移行
-* **通信仕様**:
+* **省電力・表示時間制御**:
+  * **秒数指定 (1〜300秒)**: 指定された秒数表示後、バックライト自動オフ＆スリープ移行。
+  * **永久表示 (0秒)**: 次の画像送信があるまで消灯せず永久的に表示を維持。
+  * **デフォルト (未指定時)**: 10秒間表示。
+* **任意画像送信コマンド**:
+  * コマンドライン引数 (`-i`) で指定した画像 (PNG/JPEG等) を320x170に自動変換・表示時間指定して送信可能。
+* **高精度カラー・グラデーション表示**:
+  * 16ビット RGB565 Little-Endian 送信により、階調段差（色跳び）のない高精度な画像表示を実現。
+* **通信仕様・プロトコルヘッダー**:
+  * **プロトコルヘッダー (任意)**: 先頭4バイト (`'N'`, `'T'`, `duration_sec` (uint16_t Big-Endian)) ＋ RGB565画像データ (108,800 バイト)。ヘッダーなしの従来形式（108,800バイト固定）とも完全互換。
   * **Wi-Fi (TCP Socket)**: ネットワーク経由での高速画像転送 (ポート 5555)
-  * **Bluetooth Classic SPP**: RFCOMM チャンネル 1 通信 (生 RGB565 画像データ転送、108,800 バイト/フレーム)
+  * **Bluetooth Classic SPP**: RFCOMM チャンネル 1 通信
   * Wi-Fi / Bluetooth のデュアル待受に対応。送信側スクリプト (`ubuntu_notifier.py`) では Wi-Fi 接続優先・BT 自動フォールバック (`auto` モード) が可能です。
 
 ---
@@ -114,13 +122,17 @@ source .venv/bin/activate
 pip install pillow
 ```
 
-#### 2.4 スクリプトの手動テスト実行
+*※ `ubuntu_notifier.py` はシステム `python3` から直接起動されてもプロジェクト内の `.venv` 環境へと自動切替を行って実行されます。*
+
+#### 2.4 通知監視モードの実行 (D-Bus デーモン)
 `ubuntu_notifier.py` 内の設定を必要に応じて変更します:
 * `CONNECT_MODE`: 接続モード (`"auto"`, `"wifi"`, `"bt"`, `"both"`)
+* `DISPLAY_DURATION`: デフォルト表示時間 (秒, デフォルト: `10`)
 * `ESP32_IP`: ESP32 の IP アドレス (Wi-Fi 用)
 * `ESP32_BT_ADDR`: ESP32 の Bluetooth MAC アドレス (空文字 `""` で自動検索)
 
 ```bash
+# D-Bus 通知監視モードで起動
 python3 ubuntu_notifier.py
 ```
 
@@ -129,7 +141,31 @@ python3 ubuntu_notifier.py
 notify-send "テスト通知" "Hello, ESP32 Dual Mode! 🚀"
 ```
 
-#### 2.5 systemd ユーザーサービスによる自動起動設定
+#### 2.5 任意画像ファイルの直接指定送信（コマンドオプション）
+任意の画像ファイル（PNG/JPEG等）を320x170ピクセルに自動変換（アスペクト比維持＆黒背景中央配置）し、表示時間を指定してESP32へ直接送信・表示できます。
+
+```bash
+# 画像ファイルと表示秒数(例: 30秒)を指定して送信
+python3 ubuntu_notifier.py -i /path/to/image.png -d 30
+
+# 0秒指定（次の送信があるまで永久表示）
+python3 ubuntu_notifier.py -i /path/to/image.jpg -d 0
+
+# アスペクト比を無視して320x170に強制拡大・縮小
+python3 ubuntu_notifier.py -i /path/to/image.png -d 10 --stretch
+```
+
+##### CLI コマンドの主要引数一覧:
+* `-i`, `--image`: 送信画像ファイルのパス
+* `-d`, `--duration`: 表示時間 (秒)。`0` = 永久表示, 最大 `300` (デフォルト: `10`)
+* `-m`, `--mode`: 接続モード (`auto`, `wifi`, `bt`, `both`)
+* `--stretch`: アスペクト比を無視して320x170に全画面拡大・縮小
+* `--color-order`: カラーチャンネル順序 (`rgb`, `rbg`, `bgr`, `brg`, `grb`, `gbr`)
+* `--invert`: 画像の明暗・色（ネガ）を反転して送信
+* `--swap-bytes`: バイトオーダー反転の有効化 (デフォルト: 有効)
+* `--no-swap-bytes`: バイトオーダー反転を無効化 (Big-Endian送信)
+
+#### 2.6 systemd ユーザーサービスによる自動起動設定
 システムログイン時にバックグラウンドで自動起動させたい場合は、付属の `release.sh` スクリプトを実行します。
 
 ```bash
@@ -148,4 +184,3 @@ notify-send "テスト通知" "Hello, ESP32 Dual Mode! 🚀"
   ```bash
   systemctl --user restart esp32-notify.service
   ```
-

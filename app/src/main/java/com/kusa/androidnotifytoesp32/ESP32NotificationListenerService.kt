@@ -45,13 +45,22 @@ class ESP32NotificationListenerService : NotificationListenerService() {
         val rgb565Data = convertToRGB565(bitmap)
         
         val prefs = getSharedPreferences("Settings", Context.MODE_PRIVATE)
+        val duration = prefs.getInt("display_duration", 10).coerceIn(0, 300)
+        val header = byteArrayOf(
+            'N'.code.toByte(),
+            'T'.code.toByte(),
+            (duration shr 8).toByte(),
+            (duration and 0xFF).toByte()
+        )
+        val payload = header + rgb565Data
+
         val mode = prefs.getString("mode", "TCP")
         
         if (mode == "BT") {
-            sendToESP32Bluetooth(rgb565Data)
+            sendToESP32Bluetooth(payload)
         } else {
             val ip = prefs.getString("esp32_ip", "192.168.11.100") ?: "192.168.11.100"
-            sendToESP32Tcp(rgb565Data, ip)
+            sendToESP32Tcp(payload, ip)
         }
     }
 
@@ -115,9 +124,9 @@ class ESP32NotificationListenerService : NotificationListenerService() {
 
                 val rgb565 = (r5 shl 11) or (g6 shl 5) or b5
                 
-                // Big Endian (>H)
-                bytes[index++] = (rgb565 shr 8).toByte()
+                // Little Endian (<H)
                 bytes[index++] = (rgb565 and 0xFF).toByte()
+                bytes[index++] = (rgb565 shr 8).toByte()
             }
         }
         return bytes
