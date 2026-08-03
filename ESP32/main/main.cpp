@@ -82,9 +82,26 @@ public:
 
 static LGFX_ESP32_19inch_LCD lcd;
 
-// バックライトタイマーコールバック
+// ── Welcome 画面描画関数 ──────────────────────────────────
+static void draw_welcome_screen() {
+    if (s_lcd_mutex) xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
+    gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1);
+    lcd.wakeup();
+    lcd.fillScreen(TFT_BLACK);
+
+    lcd.setTextDatum(lgfx::middle_center);
+    lcd.setTextColor(TFT_CYAN);
+    lcd.setTextSize(3);
+    lcd.drawString("Welcome", WIDTH / 2, HEIGHT / 2 - 15);
+
+    lcd.setTextColor(TFT_WHITE);
+    lcd.setTextSize(2);
+    lcd.drawString("ESP32 Notify", WIDTH / 2, HEIGHT / 2 + 20);
+    if (s_lcd_mutex) xSemaphoreGive(s_lcd_mutex);
+}
+
+// バックライトタイマーコールバック（表示時間終了時にバックライト消灯＆スリープ）
 static void backlight_timer_cb(TimerHandle_t xTimer) {
-    // バックライトOFF ＆ ディスプレイICをスリープ
     gpio_set_level((gpio_num_t)LCD_BLK_PIN, 0);
     if (s_lcd_mutex) {
         xSemaphoreTake(s_lcd_mutex, portMAX_DELAY);
@@ -92,16 +109,6 @@ static void backlight_timer_cb(TimerHandle_t xTimer) {
         xSemaphoreGive(s_lcd_mutex);
     }
 }
-
-
-
-// ── Bluetooth GAP / SPP 設定 ──────────────────────────────
-static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
-static const esp_spp_role_t role_slave = ESP_SPP_ROLE_SLAVE;
-static size_t s_bt_rx_received = 0;
-static uint8_t s_bt_header_buf[4];
-static size_t s_bt_header_bytes = 0;
-static bool s_bt_header_checked = false;
 
 // ── ディスプレイ表示時間制御関数 ────────────────────────
 static void apply_display_duration(uint16_t duration_sec) {
@@ -126,6 +133,14 @@ static void apply_display_duration(uint16_t duration_sec) {
         }
     }
 }
+
+// ── Bluetooth GAP / SPP 設定 ──────────────────────────────
+static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
+static const esp_spp_role_t role_slave = ESP_SPP_ROLE_SLAVE;
+static size_t s_bt_rx_received = 0;
+static uint8_t s_bt_header_buf[4];
+static size_t s_bt_header_bytes = 0;
+static bool s_bt_header_checked = false;
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     switch (event) {
@@ -375,7 +390,13 @@ static void wifi_init_sta(void) {
 }
 
 static void tcp_server_task(void *pvParameters) {
-    uint8_t rx_chunk[2048];
+    const size_t RX_CHUNK_SIZE = 2048;
+    uint8_t *rx_chunk = (uint8_t *)malloc(RX_CHUNK_SIZE);
+    if (!rx_chunk) {
+        ESP_LOGE(TAG, "rx_chunk メモリ確保失敗");
+        vTaskDelete(NULL);
+        return;
+    }
 
     struct sockaddr_in dest_addr;
     dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -385,6 +406,7 @@ static void tcp_server_task(void *pvParameters) {
     int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (listen_sock < 0) {
         ESP_LOGE(TAG, "TCP ソケット作成失敗: errno %d", errno);
+        free(rx_chunk);
         vTaskDelete(NULL);
         return;
     }
@@ -395,6 +417,7 @@ static void tcp_server_task(void *pvParameters) {
     if (bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) {
         ESP_LOGE(TAG, "TCP Bind 失敗: errno %d", errno);
         close(listen_sock);
+        free(rx_chunk);
         vTaskDelete(NULL);
         return;
     }
@@ -402,6 +425,7 @@ static void tcp_server_task(void *pvParameters) {
     if (listen(listen_sock, 1) < 0) {
         ESP_LOGE(TAG, "TCP Listen 失敗: errno %d", errno);
         close(listen_sock);
+        free(rx_chunk);
         vTaskDelete(NULL);
         return;
     }
@@ -426,7 +450,7 @@ static void tcp_server_task(void *pvParameters) {
         bool header_checked = false;
 
         while (total_received < BUF_SIZE) {
-            size_t to_recv = sizeof(rx_chunk) - leftover_len;
+            size_t to_recv = RX_CHUNK_SIZE - leftover_len;
             if (to_recv > (BUF_SIZE - total_received + (header_checked ? 0 : 4))) {
                 to_recv = BUF_SIZE - total_received + (header_checked ? 0 : 4);
             }
@@ -506,6 +530,7 @@ static void tcp_server_task(void *pvParameters) {
     }
 
     close(listen_sock);
+    free(rx_chunk);
     vTaskDelete(NULL);
 }
 
@@ -527,19 +552,15 @@ extern "C" void app_main() {
     gpio_set_direction((gpio_num_t)LCD_BLK_PIN, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)LCD_BLK_PIN, 1); // 1 = ON
 
+    // バックライトタイマーの作成
+    s_bl_timer = xTimerCreate("bl_timer", pdMS_TO_TICKS(10000), pdFALSE, (void*)0, backlight_timer_cb);
+
     // LCD 初期化（メインタスクから1回だけ）
     lcd.init();
     lcd.setRotation(1);
-    lcd.fillScreen(TFT_BLACK);
 
-    lcd.setTextColor(TFT_GREEN);
-    lcd.setTextSize(2);
-    lcd.drawString("ESP32 Notify", 10, 10);
-    lcd.setTextColor(TFT_BLUE);
-    lcd.drawString("WiFi/BT Init...", 10, 40);
-
-    // バックライト消灯用の10秒タイマーを作成＆スタート
-    s_bl_timer = xTimerCreate("bl_timer", pdMS_TO_TICKS(10000), pdFALSE, (void*)0, backlight_timer_cb);
+    // 起動時の Welcome 画面表示 (10秒後に自動消灯)
+    draw_welcome_screen();
     if (s_bl_timer) {
         xTimerStart(s_bl_timer, 0);
     }
@@ -550,8 +571,8 @@ extern "C" void app_main() {
     // Bluetooth 初期化
     bt_init();
 
-    // TCP サーバータスク作成
-    xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 5, NULL);
+    // TCP サーバータスク作成 (スタックサイズ 8192 バイトに拡大)
+    xTaskCreate(tcp_server_task, "tcp_server", 8192, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "起動完了 (BT + WiFi Dual Mode / Stream Direct)");
 }

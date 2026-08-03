@@ -8,7 +8,9 @@ Androidスマートフォンの通知、またはUbuntu desktopのD-Bus通知を
 
 - **通知の自動キャッチ＆画像化**:
   - **Android アプリ**: システム通知を取得し、タイトル、本文、時刻をリアルタイム画像化。
-  - **Ubuntu スクリプト**: D-Bus通知を監視し、カラー絵文字対応で画像化。
+  - **Ubuntu スクリプト**: D-Bus通知を監視し、カラー絵文字対応で画像化。サービス起動時には `🔔 PC Service Start` を ESP32 へ自動送信。
+- **ESP32 起動時 Welcome 画面**:
+  - ESP32 起動時に「Welcome / ESP32 Notify」画面を10秒間表示後、自動スリープ。初期化メッセージ非表示で視認性を向上。
 - **2つの通信モード**:
   - **TCP (Wi-Fi)**: ローカルネットワーク内のESP32へTCPソケット経由で高速送信 (ポート 5555)。
   - **Bluetooth Classic (SPP)**: Wi-Fi環境がない場所でも、Bluetoothシリアル経由で送信可能 (RFCOMM Ch 1)。

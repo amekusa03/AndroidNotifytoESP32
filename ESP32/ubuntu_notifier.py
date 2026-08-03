@@ -382,6 +382,13 @@ def main() -> None:
     print("テスト: notify-send 'タイトル' '本文'")
     print("画像直接送信例: python3 ubuntu_notifier.py -i sample.png -d 30")
 
+    # サービス起動時にベルアイコンと "PC Service Start" を表示
+    try:
+        startup_img = create_notification_image("PC Service Start", "")
+        send_image_to_esp32(startup_img)
+    except Exception as e:
+        print(f"サービス起動通知送信エラー: {e}")
+
     try:
         GLib.MainLoop().run()
     except KeyboardInterrupt:
