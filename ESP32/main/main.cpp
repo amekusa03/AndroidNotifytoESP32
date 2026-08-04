@@ -74,7 +74,7 @@ public:
           c.dummy_read_bits  = 1;
           c.readable  = false;
           c.invert    = true;
-          c.rgb_order = true;
+          c.rgb_order = false;
           _panel.config(c); }
         setPanel(&_panel);
     }
