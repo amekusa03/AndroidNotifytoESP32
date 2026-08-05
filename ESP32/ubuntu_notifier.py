@@ -243,8 +243,8 @@ def create_notification_image(title: str, body: str) -> Image.Image:
     for fp in font_candidates:
         if os.path.exists(fp):
             try:
-                title_font = ImageFont.truetype(fp, 20)
-                body_font  = ImageFont.truetype(fp, 18)
+                title_font = ImageFont.truetype(fp, 18)
+                body_font  = ImageFont.truetype(fp, 16)
                 break
             except IOError:
                 pass
@@ -260,17 +260,17 @@ def create_notification_image(title: str, body: str) -> Image.Image:
     for fp in emoji_font_candidates:
         if os.path.exists(fp):
             try:
-                emoji_font = ImageFont.truetype(fp, 18)
+                emoji_font = ImageFont.truetype(fp, 16)
                 break
             except IOError:
                 pass
 
     # タイトル (青)
-    draw_text_with_fallback(img, draw, (12, 10), f"🔔 {title}", title_font, emoji_font, fill=(0, 120, 255), font_size=20)
+    draw_text_with_fallback(img, draw, (12, 10), f"{title}", title_font, emoji_font, fill=(0, 120, 255), font_size=20)
 
     # 本文（簡易折り返し、白）
     if body:
-        chars_per_line = 16
+        chars_per_line = 22
         lines = [body[i:i+chars_per_line]
                  for i in range(0, min(len(body), chars_per_line * 3), chars_per_line)]
         for i, line in enumerate(lines[:3]):
