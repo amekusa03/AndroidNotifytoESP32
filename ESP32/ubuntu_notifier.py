@@ -266,7 +266,7 @@ def create_notification_image(title: str, body: str) -> Image.Image:
                 pass
 
     # タイトル (青)
-    draw_text_with_fallback(img, draw, (12, 10), f"{title}", title_font, emoji_font, fill=(0, 120, 255), font_size=20)
+    draw_text_with_fallback(img, draw, (12, 10), f"💻{title}", title_font, emoji_font, fill=(0, 120, 255), font_size=20)
 
     # 本文（簡易折り返し、白）
     if body:

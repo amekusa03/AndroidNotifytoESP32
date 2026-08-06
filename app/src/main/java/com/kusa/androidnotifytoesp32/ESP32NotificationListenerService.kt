@@ -76,30 +76,30 @@ class ESP32NotificationListenerService : NotificationListenerService() {
 
         // タイトル (青色)
         paint.color = Color.rgb(0, 120, 255)
-        paint.textSize = 24f
-        canvas.drawText("🔔 $title", 12f, 30f, paint)
+        paint.textSize = 18f
+        canvas.drawText("📱 $title", 12f, 30f, paint)
 
         // 本文 (白色)
         paint.color = Color.WHITE
-        paint.textSize = 20f
+        paint.textSize = 16f
         
         // 簡易的な改行処理
         val maxWidth = WIDTH - 24
         val lines = mutableListOf<String>()
         var remainingText = body
-        while (remainingText.isNotEmpty() && lines.size < 3) {
+        while (remainingText.isNotEmpty() && lines.size < 4) {
             val count = paint.breakText(remainingText, true, maxWidth.toFloat(), null)
             lines.add(remainingText.substring(0, count))
             remainingText = remainingText.substring(count)
         }
 
         lines.forEachIndexed { index, line ->
-            canvas.drawText(line, 12f, 70f + index * 32f, paint)
+            canvas.drawText(line, 12f, 60f + index * 24f, paint)
         }
 
         // タイムスタンプ (青色)
         paint.color = Color.rgb(0, 120, 255)
-        paint.textSize = 20f
+        paint.textSize = 18f
         val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val timeWidth = paint.measureText(timeStr)
         canvas.drawText(timeStr, WIDTH - timeWidth - 12f, HEIGHT - 15f, paint)
