@@ -59,7 +59,7 @@ class ESP32NotificationListenerService : NotificationListenerService() {
         if (mode == "BT") {
             sendToESP32Bluetooth(payload)
         } else {
-            val ip = prefs.getString("esp32_ip", "192.168.11.100") ?: "192.168.11.100"
+            val ip = prefs.getString("esp32_ip", "esp32-notify.local") ?: "esp32-notify.local"
             sendToESP32Tcp(payload, ip)
         }
     }
@@ -132,20 +132,31 @@ class ESP32NotificationListenerService : NotificationListenerService() {
         return bytes
     }
 
-    private fun sendToESP32Tcp(data: ByteArray, ip: String) {
+    private fun resolveHost(host: String): String {
+        return try {
+            val address = java.net.InetAddress.getByName(host)
+            address.hostAddress ?: host
+        } catch (e: Exception) {
+            Log.w(TAG, "DNS resolution failed for $host: ${e.message}")
+            host
+        }
+    }
+
+    private fun sendToESP32Tcp(data: ByteArray, host: String) {
         thread {
             try {
-                Socket(ip, 5555).use { socket ->
+                val resolvedTarget = resolveHost(host)
+                Socket(resolvedTarget, 5555).use { socket ->
                     socket.soTimeout = 5000
                     val out = DataOutputStream(socket.getOutputStream())
                     out.write(data)
                     out.flush()
-                    Log.d(TAG, "Successfully sent ${data.size} bytes to ESP32 via TCP ($ip)")
-                    TransmissionHistoryManager.addEntry("TCP: $ip", "画像送信", true, "成功")
+                    Log.d(TAG, "Successfully sent ${data.size} bytes to ESP32 via TCP ($host -> $resolvedTarget)")
+                    TransmissionHistoryManager.addEntry("TCP: $host", "画像送信", true, "成功")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending to ESP32 via TCP: ${e.message}")
-                TransmissionHistoryManager.addEntry("TCP: $ip", "画像送信", false, "エラー: ${e.message}")
+                Log.e(TAG, "Error sending to ESP32 via TCP ($host): ${e.message}")
+                TransmissionHistoryManager.addEntry("TCP: $host", "画像送信", false, "エラー: ${e.message}")
             }
         }
     }

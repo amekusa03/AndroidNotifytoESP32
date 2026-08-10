@@ -19,6 +19,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "mdns.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -331,6 +332,18 @@ static void bt_init() {
 static bool s_wifi_connected = false;
 static char s_wifi_ip_str[32] = "WiFi Connecting...";
 
+static void start_mdns_service(void) {
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS 初期化失敗: %s", esp_err_to_name(err));
+        return;
+    }
+    mdns_hostname_set("esp32-notify");
+    mdns_instance_name_set("ESP32 Notification Receiver");
+    mdns_service_add("ESP32 TCP Service", "_notify", "_tcp", 5555, NULL, 0);
+    ESP_LOGI(TAG, "mDNS 起動完了: esp32-notify.local (_notify._tcp:5555)");
+}
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -345,6 +358,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         s_wifi_connected = true;
         snprintf(s_wifi_ip_str, sizeof(s_wifi_ip_str), "IP: " IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "WiFi 接続完了, %s", s_wifi_ip_str);
+        start_mdns_service();
     }
 }
 

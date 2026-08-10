@@ -48,7 +48,7 @@ class FirstFragment : Fragment() {
 
         val prefs = requireContext().getSharedPreferences("Settings", Context.MODE_PRIVATE)
         
-        binding.editTextIp.setText(prefs.getString("esp32_ip", "192.168.11.100"))
+        binding.editTextIp.setText(prefs.getString("esp32_ip", "esp32-notify.local"))
         binding.editTextBtName.setText(prefs.getString("bt_name", "ESP32_Notfity"))
         binding.editTextDuration.setText(prefs.getInt("display_duration", 10).toString())
         

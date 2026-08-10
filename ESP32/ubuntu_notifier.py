@@ -34,8 +34,8 @@ DISPLAY_DURATION = 10
 SWAP_BYTES       = True
 
 # ESP32 の Wi-Fi (TCP Socket) 設定
-ESP32_IP      = "192.168.11.100"  # ESP32 の IP アドレス (例: wifi_settings.h で設定した IP)
-TCP_PORT      = 5555              # TCP サーバーポート
+ESP32_IP      = "esp32-notify.local"  # ESP32 の IP アドレスまたは mDNS ホスト名
+TCP_PORT      = 5555                  # TCP サーバーポート
 
 # ESP32 の Bluetooth MAC アドレス (例: "AA:BB:CC:DD:EE:FF")
 # 未設定 ("") の場合は bluetoothctl で "ESP32_Notify" の自動検索を試みます
@@ -326,6 +326,7 @@ def main() -> None:
     global CONNECT_MODE
 
     parser = argparse.ArgumentParser(description="ESP32 通知 & 画像送信ツール")
+    parser.add_argument("--host", "--ip", type=str, default=ESP32_IP, help="ESP32 の IP アドレスまたは mDNS ホスト名 (デフォルト: esp32-notify.local)")
     parser.add_argument("-i", "--image", type=str, help="ESP32に送信・表示する画像ファイルのパス")
     parser.add_argument("-d", "--duration", type=int, default=DISPLAY_DURATION, help="表示時間(秒)。0=永久表示, Max=300 (デフォルト: 10)")
     parser.add_argument("-m", "--mode", type=str, choices=["auto", "wifi", "bt", "both"], help="接続モード (auto, wifi, bt, both)")
@@ -338,6 +339,9 @@ def main() -> None:
     parser.add_argument("--no-swap-bytes", "--big-endian", action="store_false", dest="swap_bytes", help="バイトオーダー反転を無効化してBig-Endianで送信")
 
     args = parser.parse_args()
+
+    if args.host:
+        ESP32_IP = args.host
 
     if args.mode:
         CONNECT_MODE = args.mode
