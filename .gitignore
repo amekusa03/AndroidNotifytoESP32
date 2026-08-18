@@ -23,3 +23,12 @@ ESP32/main/wifi_settings.h
 ESP32/.venv/
 ESP32/__pycache__/
 ESP32/components/
+
+# Linux
+Linux/build/
+Linux/*_autogen/
+Linux/CMakeCache.txt
+Linux/CMakeFiles/
+Linux/Makefile
+Linux/cmake_install.cmake
+Linux/compile_commands.json
