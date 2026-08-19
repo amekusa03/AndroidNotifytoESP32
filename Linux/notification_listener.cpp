@@ -1,8 +1,10 @@
 #include "notification_listener.h"
 #include <QPainter>
 #include <QFont>
+#include <QFontMetrics>
 #include <QColor>
 #include <QTime>
+#include <QTextDocument>
 #include <QDebug>
 
 NotificationListener::NotificationListener(QObject *parent)
@@ -55,7 +57,7 @@ uint NotificationListener::Notify(const QString &app_name, uint replaces_id, con
 }
 
 QStringList NotificationListener::GetCapabilities() {
-    return QStringList() << "body";
+    return QStringList() << "body" << "body-markup" << "body-hyperlinks";
 }
 
 void NotificationListener::GetServerInformation(QString &name, QString &vendor, QString &version, QString &spec_version) {
@@ -83,32 +85,47 @@ QImage NotificationListener::createNotificationImage(const QString &title, const
 
     QFont font("Sans-Serif", 12);
     font.setPixelSize(18);
+    font.setBold(true);
     painter.setFont(font);
 
     // Title (Blue: 0, 120, 255)
     painter.setPen(QColor(0, 120, 255));
     QString titleText = QString("💻 %1").arg(title);
-    painter.drawText(12, 28, titleText);
+    QFontMetrics fm(font);
+    QString elidedTitle = fm.elidedText(titleText, Qt::ElideRight, WIDTH - 24);
+    painter.drawText(12, 28, elidedTitle);
 
-    // Body (White: 255, 255, 255)
+    // Body (HTML / Markup support)
     if (!body.isEmpty()) {
-        font.setPixelSize(16);
-        painter.setFont(font);
-        painter.setPen(QColor(255, 255, 255));
-        int charsPerLine = 22;
-        int maxLines = 3;
-        for (int i = 0; i < maxLines && (i * charsPerLine) < body.length(); ++i) {
-            QString line = body.mid(i * charsPerLine, charsPerLine);
-            painter.drawText(12, 65 + i * 32, line);
-        }
+        QTextDocument doc;
+        doc.setTextWidth(WIDTH - 24);
+
+        QString htmlContent = QString(
+            "<html><head><style>"
+            "body { color: #ffffff; font-family: Sans-Serif; font-size: 15px; margin: 0; padding: 0; line-height: 1.2; }"
+            "a { color: #4aa3ff; text-decoration: underline; }"
+            "b, strong { color: #ffffff; font-weight: bold; }"
+            "i, em { font-style: italic; }"
+            "u { text-decoration: underline; }"
+            "</style></head><body>%1</body></html>"
+        ).arg(body);
+
+        doc.setHtml(htmlContent);
+
+        painter.save();
+        painter.translate(12, 36);
+        painter.setClipRect(0, 0, WIDTH - 24, 110);
+        doc.drawContents(&painter);
+        painter.restore();
     }
 
     // Timestamp (Blue: 0, 120, 255)
-    font.setPixelSize(16);
-    painter.setFont(font);
+    QFont tsFont("Sans-Serif", 10);
+    tsFont.setPixelSize(14);
+    painter.setFont(tsFont);
     painter.setPen(QColor(0, 120, 255));
     QString ts = QTime::currentTime().toString("hh:mm");
-    painter.drawText(WIDTH - 65, HEIGHT - 15, ts);
+    painter.drawText(WIDTH - 55, HEIGHT - 12, ts);
 
     painter.end();
     return img;
@@ -196,4 +213,49 @@ void NotificationListener::sendToESP32(const QByteArray &data) {
         qWarning() << err;
         emit logMessage(err);
     }
+}
+
+
+QImage NotificationListener::processCustomImage(const QImage &orig, bool stretch) {
+    if (orig.isNull()) {
+        return QImage();
+    }
+    if (stretch) {
+        return orig.scaled(WIDTH, HEIGHT, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    } else {
+        QImage bg(WIDTH, HEIGHT, QImage::Format_RGB32);
+        bg.fill(Qt::black);
+
+        QImage scaled = orig.scaled(WIDTH, HEIGHT, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+        QPainter painter(&bg);
+        int offsetX = (WIDTH - scaled.width()) / 2;
+        int offsetY = (HEIGHT - scaled.height()) / 2;
+        painter.drawImage(offsetX, offsetY, scaled);
+        painter.end();
+
+        return bg;
+    }
+}
+
+bool NotificationListener::sendCustomImage(const QImage &image, uint16_t durationSec, bool swapBytes) {
+    if (image.isNull()) {
+        qWarning() << "送信エラー: 画像が無効です。";
+        return false;
+    }
+    QByteArray payload = imageToRGB565Payload(image, durationSec, swapBytes);
+    sendToESP32(payload);
+    return true;
+}
+
+bool NotificationListener::processCustomImageFile(const QString &imagePath, uint16_t durationSec, bool stretch, bool swapBytes) {
+    QImage orig;
+    if (!orig.load(imagePath)) {
+        QString err = QString("画像ファイルの読み込みに失敗しました: %1").arg(imagePath);
+        qWarning() << err;
+        emit logMessage(err);
+        return false;
+    }
+    QImage processed = processCustomImage(orig, stretch);
+    return sendCustomImage(processed, durationSec, swapBytes);
 }

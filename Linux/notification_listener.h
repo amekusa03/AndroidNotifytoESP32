@@ -23,6 +23,10 @@ public:
     void sendToESP32(const QByteArray &data);
     void processNotification(const QString &title, const QString &body);
 
+    bool processCustomImageFile(const QString &imagePath, uint16_t durationSec = 10, bool stretch = false, bool swapBytes = true);
+    bool sendCustomImage(const QImage &image, uint16_t durationSec = 10, bool swapBytes = true);
+    static QImage processCustomImage(const QImage &orig, bool stretch = false);
+
 public slots:
     uint Notify(const QString &app_name, uint replaces_id, const QString &app_icon,
                 const QString &summary, const QString &body,
