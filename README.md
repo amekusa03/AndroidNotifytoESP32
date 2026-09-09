@@ -1,5 +1,7 @@
 # AndroidNotifytoESP32 / ESP32wrNotify
 
+[English](README.md) | [日本語](README.JP.md)
+
 An application and system that catches Android smartphone notifications or Ubuntu/Linux desktop D-Bus notifications, converts them into 320x170 pixel image data (RGB565 format), and transfers them to an ESP32 LCD display for viewing.
 
 ---
@@ -95,6 +97,12 @@ python3 ESP32/ubuntu_notifier.py -i /path/to/image.png -d 10 --stretch
 - `--stretch`: Ignore aspect ratio and force full-screen resize to 320x170
 - `--color-order`: Color channel order (e.g., `rgb`, `rbg`, `bgr`)
 - `--invert`: Invert the image's brightness/color (negative)
+
+---
+
+## ⚡ ESP32 Firmware Setup
+
+Please see [`ESP32/README.md`](ESP32/README.md) for firmware build, pinout, and setup instructions.
 
 ---
 

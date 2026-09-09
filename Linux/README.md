@@ -1,27 +1,29 @@
-# ESP32 Notifier for Linux (Qt5 C++版)
+# ESP32 Notifier for Linux (Qt5 C++ Version)
 
-Ubuntu / Linux デスクトップ向けの D-Bus 通知キャッチ＆ESP32 転送アプリケーション（Qt5 / C++ 実装）です。  
-D-Bus (`org.freedesktop.Notifications`) 経由でデスクトップ通知をリアルタイムに監視し、通知のタイトルや本文を 320x170 ピクセルの RGB565 画像に変換して TCP 経由で ESP32 へ自動転送します。
+[English](README.md) | [日本語](README.JP.md)
 
----
-
-## 🌟 特長
-
-- **D-Bus 通知自動キャッチ**: システム通知メッセージ（`org.freedesktop.Notifications`）を受信し、自動的に ESP32 ディスプレイ用画像（320x170）へ描画して送信。
-- **タスクトレイ (System Tray) 常駐**: タスクトレイアイコンから設定画面の呼出、テスト通知の送信、アプリ終了が可能。
-- **GUI 設定ダイアログ**:
-  - ESP32 の IP アドレスおよび TCP ポート番号の変更
-  - ログイン時の自動起動（Autostart）のオン/オフ切り替え
-  - 動作確認用テスト通知送信
-  - リアルタイム送信ログ表示
-- **自動起動（Autostart）対応**: XDG Desktop Autostart 規格（`~/.config/autostart/esp32-notifier.desktop`）に準拠した自動起動設定をサポート。
-- **高速＆軽量**: Qt5 / C++17 ネイティブ実装により、バックグラウンドでの低リソース・軽量動作を実現。
+A desktop notification capture and ESP32 forwarding application for Ubuntu / Linux desktop environments built with Qt5 / C++17.  
+It monitors desktop notifications in real time via D-Bus (`org.freedesktop.Notifications`), converts notification titles and body text into 320x170 pixel RGB565 images, and automatically forwards them to an ESP32 display over TCP.
 
 ---
 
-## 📦 依存パッケージ (ビルド前提条件)
+## 🌟 Features
 
-Ubuntu / Debian 系 Linux ディストリビューションに必要なパッケージをインストールしてください:
+- **Automatic D-Bus Notification Capture**: Intercepts desktop notifications (`org.freedesktop.Notifications`), renders them onto a 320x170 canvas formatted for the ESP32 display, and transfers the image.
+- **System Tray Residency**: Allows opening settings, sending test notifications, and quitting the application from the system tray icon and context menu.
+- **GUI Settings Dialog**:
+  - Configure ESP32 IP address and TCP port.
+  - Toggle auto-start at user login on/off.
+  - Send test notifications to verify operation.
+  - View real-time transmission logs.
+- **XDG Autostart Support**: Integrates seamlessly with XDG Desktop Autostart (`~/.config/autostart/esp32-notifier.desktop`).
+- **Fast & Lightweight**: Native Qt5 / C++17 implementation ensures minimal memory footprint and background CPU usage.
+
+---
+
+## 📦 Dependencies (Build Prerequisites)
+
+Install the required packages on Ubuntu / Debian-based Linux distributions:
 
 ```bash
 sudo apt update
@@ -30,41 +32,41 @@ sudo apt install build-essential cmake qtbase5-dev libqt5dbus5
 
 ---
 
-## 🛠️ ビルドと実行方法
+## 🛠️ Build & Run
 
-### 1. ビルド
+### 1. Build
 ```bash
 cd Linux
 cmake -B build -S .
 cmake --build build
 ```
 
-ビルドが完了すると `build/esp32-notifier` 実行ファイルが生成されます。
+Upon completion, the `build/esp32-notifier` binary will be created.
 
-### 2. 実行
+### 2. Run
 ```bash
 ./build/esp32-notifier
 ```
 
 ---
 
-## ⚙️ 使い方
+## ⚙️ Usage
 
-1. **起動**: アプリを起動するとタスクトレイ（システムトレイ）にアイコンが表示されます。
-2. **設定**:
-   - トレイアイコンをクリック（または右クリックメニューから「設定...」を選択）して設定ダイアログを開きます。
-   - ESP32 の IP アドレス（デフォルト: `192.168.11.100`）および TCP ポート番号（デフォルト: `5555`）を設定し、「保存して閉じる」をクリックします。
-3. **テスト送信**:
-   - 設定ダイアログの「テスト通知送信」ボタン、またはトレイアイコンの右クリックメニュー「テスト通知送信」を押すと、動作確認用通知が ESP32 へ送信されます。
-4. **自動起動 (Autostart)**:
-   - 設定ダイアログの「ログイン時に自動実行する (Autostart)」にチェックを入れると、次回ログイン時から自動的にバックグラウンド起動します。
+1. **Launch**: Running the application displays an icon in the system tray.
+2. **Settings**:
+   - Click the tray icon (or right-click and select "Settings...") to open the configuration dialog.
+   - Enter your ESP32's IP address (Default: `192.168.11.100`) and TCP port (Default: `5555`), then click "Save & Close".
+3. **Test Notification**:
+   - Click "Send Test Notification" in the settings dialog or choose "Send Test Notification" from the tray menu to test connectivity.
+4. **Autostart**:
+   - Check "Launch automatically at login (Autostart)" to enable background startup upon user login.
 
 ---
 
-## 📐 技術仕様
+## 📐 Technical Specifications
 
-- **対象画面サイズ**: 320 x 170 ピクセル (16-bit RGB565 Little-Endian)
-- **ネットワーク通信**: TCP ソケット（デフォルト ポート: `5555`）
-- **プロトコルヘッダー**: 4 バイトヘッダー (`'N'`, `'T'`, `duration_hi`, `duration_lo`) + 108,800 バイト (320x170x2) Raw RGB565 データ
-- **設定ファイル保存先**: `~/.config/ESP32Notifier/Config.conf` (QSettings)
-- **自動起動設定ファイル保存先**: `~/.config/autostart/esp32-notifier.desktop`
+- **Target Screen Size**: 320 x 170 pixels (16-bit RGB565 Little-Endian)
+- **Network Protocol**: TCP Socket (Default Port: `5555`)
+- **Protocol Header**: 4-byte header (`'N'`, `'T'`, `duration_hi`, `duration_lo`) + 108,800 bytes (320x170x2) Raw RGB565 Data
+- **Config File Path**: `~/.config/ESP32Notifier/Config.conf` (QSettings)
+- **Autostart File Path**: `~/.config/autostart/esp32-notifier.desktop`

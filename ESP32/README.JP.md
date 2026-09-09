@@ -1,5 +1,7 @@
 # ESP32 Ubuntu通知表示システム (ESP32wrNotify)
 
+[English](README.md) | [日本語](README.JP.md)
+
 Ubuntu システムの通知（D-Bus）をキャプチャ、または任意の画像ファイルを指定して、Bluetooth Classic (SPP: Serial Port Profile) または Wi-Fi (TCP Socket) 経由で ESP32 ディスプレイに画像として転送・表示するシステムです。
 
 ---
@@ -112,7 +114,7 @@ sudo apt install python3-venv python3-dbus python3-gi gir1.2-glib-2.0 \
 
 ```bash
 # プロジェクトディレクトリに移動
-cd /path/to/ESP32wrNotify
+cd /path/to/ESP32wrNotify/ESP32
 
 # 仮想環境の作成
 python3 -m venv --system-site-packages .venv
