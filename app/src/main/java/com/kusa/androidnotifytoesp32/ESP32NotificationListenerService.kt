@@ -33,7 +33,7 @@ class ESP32NotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
-        if (packageName == this.packageName) return // 自アプリの通知は無視
+        if (packageName == this.packageName) return // Ignore notifications from this app
 
         val extras = sbn.notification.extras
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
@@ -74,16 +74,16 @@ class ESP32NotificationListenerService : NotificationListenerService() {
             typeface = Typeface.DEFAULT
         }
 
-        // タイトル (青色)
+        // Title (Blue)
         paint.color = Color.rgb(0, 120, 255)
         paint.textSize = 18f
         canvas.drawText("📱 $title", 12f, 30f, paint)
 
-        // 本文 (白色)
+        // Body (White)
         paint.color = Color.WHITE
         paint.textSize = 16f
         
-        // 簡易的な改行処理
+        // Simple line break processing
         val maxWidth = WIDTH - 24
         val lines = mutableListOf<String>()
         var remainingText = body
@@ -97,7 +97,7 @@ class ESP32NotificationListenerService : NotificationListenerService() {
             canvas.drawText(line, 12f, 60f + index * 24f, paint)
         }
 
-        // タイムスタンプ (青色)
+        // Timestamp (Blue)
         paint.color = Color.rgb(0, 120, 255)
         paint.textSize = 18f
         val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
@@ -152,11 +152,11 @@ class ESP32NotificationListenerService : NotificationListenerService() {
                     out.write(data)
                     out.flush()
                     Log.d(TAG, "Successfully sent ${data.size} bytes to ESP32 via TCP ($host -> $resolvedTarget)")
-                    TransmissionHistoryManager.addEntry("TCP: $host", "画像送信", true, "成功")
+                    TransmissionHistoryManager.addEntry("TCP: $host", "Image transmission", true, "Success")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending to ESP32 via TCP ($host): ${e.message}")
-                TransmissionHistoryManager.addEntry("TCP: $host", "画像送信", false, "エラー: ${e.message}")
+                TransmissionHistoryManager.addEntry("TCP: $host", "Image transmission", false, "Error: ${e.message}")
             }
         }
     }
@@ -169,16 +169,16 @@ class ESP32NotificationListenerService : NotificationListenerService() {
                 val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
                 val bluetoothAdapter = bluetoothManager.adapter
                 if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-                    val msg = "Bluetoothが無効です"
+                    val msg = "Bluetooth is disabled"
                     Log.e(TAG, msg)
-                    TransmissionHistoryManager.addEntry("BT: $targetName", "画像送信", false, msg)
+                    TransmissionHistoryManager.addEntry("BT: $targetName", "Image transmission", false, msg)
                     return@thread
                 }
 
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                    val msg = "権限がありません"
+                    val msg = "Permission denied"
                     Log.e(TAG, msg)
-                    TransmissionHistoryManager.addEntry("BT: $targetName", "画像送信", false, msg)
+                    TransmissionHistoryManager.addEntry("BT: $targetName", "Image transmission", false, msg)
                     return@thread
                 }
 
@@ -186,9 +186,9 @@ class ESP32NotificationListenerService : NotificationListenerService() {
                 val device = pairedDevices.find { it.name == targetName }
                 
                 if (device == null) {
-                    val msg = "ペアリングされていません"
+                    val msg = "Not paired"
                     Log.e(TAG, msg)
-                    TransmissionHistoryManager.addEntry("BT: $targetName", "画像送信", false, msg)
+                    TransmissionHistoryManager.addEntry("BT: $targetName", "Image transmission", false, msg)
                     return@thread
                 }
 
@@ -198,11 +198,11 @@ class ESP32NotificationListenerService : NotificationListenerService() {
                     out.write(data)
                     out.flush()
                     Log.d(TAG, "Successfully sent ${data.size} bytes to ESP32 via Bluetooth ($targetName)")
-                    TransmissionHistoryManager.addEntry("BT: $targetName", "画像送信", true, "成功")
+                    TransmissionHistoryManager.addEntry("BT: $targetName", "Image transmission", true, "Success")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending to ESP32 via Bluetooth: ${e.message}")
-                TransmissionHistoryManager.addEntry("BT: $targetName", "画像送信", false, "エラー: ${e.message}")
+                TransmissionHistoryManager.addEntry("BT: $targetName", "Image transmission", false, "Error: ${e.message}")
             }
         }
     }

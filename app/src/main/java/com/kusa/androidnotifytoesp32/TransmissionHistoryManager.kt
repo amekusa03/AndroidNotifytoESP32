@@ -27,7 +27,7 @@ object TransmissionHistoryManager {
         val newEntry = HistoryEntry(timestamp, destination, title, isSuccess, message)
         
         val currentList = _history.value.toMutableList()
-        currentList.add(0, newEntry) // 最新を上に
+        currentList.add(0, newEntry) // Newest on top
         
         if (currentList.size > MAX_HISTORY_SIZE) {
             currentList.removeAt(currentList.size - 1)

@@ -87,7 +87,7 @@ class FirstFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             TransmissionHistoryManager.history.collect { entries ->
                 if (entries.isEmpty()) {
-                    binding.textViewHistory.text = "履歴はありません"
+                    binding.textViewHistory.text = "No history available"
                     return@collect
                 }
                 val sb = StringBuilder()
@@ -128,16 +128,16 @@ class FirstFragment : Fragment() {
         } else true
 
         if (isNotifyEnabled && isBtGranted) {
-            binding.textviewStatus.text = "通知転送ステータス: 稼働中"
+            binding.textviewStatus.text = "Notification Forwarding: Active"
             binding.textviewStatus.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
-            binding.buttonSettings.text = "設定を確認する"
+            binding.buttonSettings.text = "Check Settings"
         } else {
-            var errorMsg = "通知転送ステータス: "
-            if (!isNotifyEnabled) errorMsg += "通知権限なし "
-            if (!isBtGranted) errorMsg += "BT権限なし"
+            var errorMsg = "Notification Forwarding: "
+            if (!isNotifyEnabled) errorMsg += "No Notification Permission "
+            if (!isBtGranted) errorMsg += "No BT Permission"
             binding.textviewStatus.text = errorMsg
             binding.textviewStatus.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
-            binding.buttonSettings.text = "権限を設定する"
+            binding.buttonSettings.text = "Configure Permissions"
         }
     }
 
