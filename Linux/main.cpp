@@ -24,22 +24,22 @@ int main(int argc, char *argv[]) {
     parser.addHelpOption();
     parser.addVersionOption();
 
-    QCommandLineOption imageOption(QStringList() << "i" << "image", "ESP32に送信・表示する画像ファイルのパス", "file");
+    QCommandLineOption imageOption(QStringList() << "i" << "image", "Path of image file to send and display on ESP32", "file");
     parser.addOption(imageOption);
 
-    QCommandLineOption durationOption(QStringList() << "d" << "duration", "表示時間(秒)。0=永久表示, Max=300 (デフォルト: 10)", "seconds", "10");
+    QCommandLineOption durationOption(QStringList() << "d" << "duration", "Display duration in seconds. 0=Permanent, Max=300 (Default: 10)", "seconds", "10");
     parser.addOption(durationOption);
 
-    QCommandLineOption stretchOption("stretch", "アスペクト比を無視して320x170に拡大・縮小");
+    QCommandLineOption stretchOption("stretch", "Ignore aspect ratio and stretch to 320x170");
     parser.addOption(stretchOption);
 
-    QCommandLineOption ipOption(QStringList() << "host" << "ip", "ESP32 の IP アドレスまたは mDNS ホスト名", "address");
+    QCommandLineOption ipOption(QStringList() << "host" << "ip", "ESP32 IP address or mDNS hostname", "address");
     parser.addOption(ipOption);
 
-    QCommandLineOption portOption("port", "ESP32 の TCP ポート", "port");
+    QCommandLineOption portOption("port", "ESP32 TCP port", "port");
     parser.addOption(portOption);
 
-    parser.addPositionalArgument("image_path", "送信する画像ファイルパス (省略可)", "[image_path]");
+    parser.addPositionalArgument("image_path", "Image file path to send (optional)", "[image_path]");
 
     parser.process(app);
 
@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
     NotificationListener listener;
     listener.setEsp32Address(ip, static_cast<quint16>(port));
 
-    // 画像指定の判定 (-i/--image オプション、または第1位置引数)
+    // Determine custom image mode (-i/--image option or 1st positional argument)
     QString imagePath;
     if (parser.isSet(imageOption)) {
         imagePath = parser.value(imageOption);
@@ -73,26 +73,26 @@ int main(int argc, char *argv[]) {
         int duration = parser.value(durationOption).toInt();
         bool stretch = parser.isSet(stretchOption);
 
-        qDebug() << "指定画像送信モード:" << imagePath
-                 << "(表示時間:" << duration << "秒, IP:" << ip << ":" << port
-                 << ", ストレッチ:" << (stretch ? "有効" : "無効") << ")";
+        qDebug() << "Custom image send mode:" << imagePath
+                 << "(Duration:" << duration << "s, IP:" << ip << ":" << port
+                 << ", Stretch:" << (stretch ? "Enabled" : "Disabled") << ")";
 
         bool success = listener.processCustomImageFile(imagePath, static_cast<uint16_t>(duration), stretch, true);
         if (success) {
-            std::cout << "画像送信が正常に完了しました。" << std::endl;
+            std::cout << "Image sent successfully." << std::endl;
             return 0;
         } else {
-            std::cerr << "画像送信に失敗しました。" << std::endl;
+            std::cerr << "Failed to send image." << std::endl;
             return 1;
         }
     }
 
-    // 引数なし（または画像指定なし）の場合は常駐モード
+    // Run in system tray background mode if no image arguments given
     bool autostartSetting = settings.value("autostart", true).toBool();
     AutostartManager::setAutostartEnabled(autostartSetting);
 
     if (!listener.registerDBusService()) {
-        qWarning() << "D-Busオブジェクトの登録に失敗しました。";
+        qWarning() << "Failed to register D-Bus object.";
     }
 
     QSystemTrayIcon trayIcon;
@@ -100,10 +100,10 @@ int main(int argc, char *argv[]) {
     trayIcon.setToolTip("ESP32 Ubuntu Notifier (Qt C++)");
 
     QMenu trayMenu;
-    QAction *settingsAction = trayMenu.addAction("設定(&S)...");
-    QAction *testAction = trayMenu.addAction("テスト通知送信(&T)");
+    QAction *settingsAction = trayMenu.addAction("&Settings...");
+    QAction *testAction = trayMenu.addAction("Send &Test Notification");
     trayMenu.addSeparator();
-    QAction *quitAction = trayMenu.addAction("終了(&Q)");
+    QAction *quitAction = trayMenu.addAction("&Quit");
 
     trayIcon.setContextMenu(&trayMenu);
     trayIcon.show();
@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
     });
 
     QObject::connect(testAction, &QAction::triggered, [&listener]() {
-        listener.processNotification("テスト通知", "C++/Qtアプリからの動作確認テストです");
+        listener.processNotification("Test Notification", "This is a test notification from the Qt C++ app.");
     });
 
     QObject::connect(quitAction, &QAction::triggered, &app, &QApplication::quit);
@@ -130,8 +130,8 @@ int main(int argc, char *argv[]) {
         }
     });
 
-    qDebug() << "ESP32 Ubuntu Notifier (Qt C++) 起動完了。";
-    qDebug() << "送信先:" << ip << ":" << port;
+    qDebug() << "ESP32 Ubuntu Notifier (Qt C++) started.";
+    qDebug() << "Target:" << ip << ":" << port;
 
     return app.exec();
 }

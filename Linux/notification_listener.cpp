@@ -36,9 +36,9 @@ bool NotificationListener::registerDBusService() {
         bus.call(matchMsg);
     }
 
-    emit logMessage(QString("D-Bus設定完了 (ObjectRegistered: %1, ServiceRegistered: %2)")
-                    .arg(regObj ? "成功" : "失敗")
-                    .arg(regSvc ? "成功" : "既存サービスと共有"));
+    emit logMessage(QString("D-Bus setup completed (ObjectRegistered: %1, ServiceRegistered: %2)")
+                    .arg(regObj ? "Success" : "Failed")
+                    .arg(regSvc ? "Success" : "Shared with existing service"));
     return regObj;
 }
 
@@ -68,7 +68,7 @@ void NotificationListener::GetServerInformation(QString &name, QString &vendor, 
 }
 
 void NotificationListener::processNotification(const QString &title, const QString &body) {
-    emit logMessage(QString("通知受信: [%1] %2").arg(title, body));
+    emit logMessage(QString("Notification received: [%1] %2").arg(title, body));
     emit notificationReceived(title, body);
 
     QImage img = createNotificationImage(title, body);
@@ -182,7 +182,7 @@ void NotificationListener::sendToESP32(const QByteArray &data) {
         while (totalWritten < totalSize && socket.state() == QAbstractSocket::ConnectedState) {
             qint64 written = socket.write(buffer + totalWritten, totalSize - totalWritten);
             if (written < 0) {
-                QString err = QString("TCP送信中にエラー発生: %1").arg(socket.errorString());
+                QString err = QString("Error during TCP send: %1").arg(socket.errorString());
                 qWarning() << err;
                 emit logMessage(err);
                 return;
@@ -190,7 +190,7 @@ void NotificationListener::sendToESP32(const QByteArray &data) {
             totalWritten += written;
             if (totalWritten < totalSize) {
                 if (!socket.waitForBytesWritten(3000)) {
-                    QString err = QString("TCP書き込みタイムアウト: %1").arg(socket.errorString());
+                    QString err = QString("TCP write timeout: %1").arg(socket.errorString());
                     qWarning() << err;
                     emit logMessage(err);
                     return;
@@ -204,17 +204,16 @@ void NotificationListener::sendToESP32(const QByteArray &data) {
             socket.waitForDisconnected(3000);
         }
 
-        QString log = QString("ESP32へ全データ送信完了 (%1/%2 bytes → %3:%4)")
+        QString log = QString("All data sent to ESP32 (%1/%2 bytes -> %3:%4)")
                         .arg(totalWritten).arg(totalSize).arg(m_esp32Ip).arg(m_esp32Port);
         qDebug() << log;
         emit logMessage(log);
     } else {
-        QString err = QString("TCP接続エラー: %1 (%2:%3)").arg(socket.errorString()).arg(m_esp32Ip).arg(m_esp32Port);
+        QString err = QString("TCP connection error: %1 (%2:%3)").arg(socket.errorString()).arg(m_esp32Ip).arg(m_esp32Port);
         qWarning() << err;
         emit logMessage(err);
     }
 }
-
 
 QImage NotificationListener::processCustomImage(const QImage &orig, bool stretch) {
     if (orig.isNull()) {
@@ -240,7 +239,7 @@ QImage NotificationListener::processCustomImage(const QImage &orig, bool stretch
 
 bool NotificationListener::sendCustomImage(const QImage &image, uint16_t durationSec, bool swapBytes) {
     if (image.isNull()) {
-        qWarning() << "送信エラー: 画像が無効です。";
+        qWarning() << "Send error: Invalid image.";
         return false;
     }
     QByteArray payload = imageToRGB565Payload(image, durationSec, swapBytes);
@@ -251,7 +250,7 @@ bool NotificationListener::sendCustomImage(const QImage &image, uint16_t duratio
 bool NotificationListener::processCustomImageFile(const QString &imagePath, uint16_t durationSec, bool stretch, bool swapBytes) {
     QImage orig;
     if (!orig.load(imagePath)) {
-        QString err = QString("画像ファイルの読み込みに失敗しました: %1").arg(imagePath);
+        QString err = QString("Failed to load image file: %1").arg(imagePath);
         qWarning() << err;
         emit logMessage(err);
         return false;

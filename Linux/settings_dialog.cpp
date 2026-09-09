@@ -9,7 +9,7 @@
 
 SettingsDialog::SettingsDialog(NotificationListener *listener, QWidget *parent)
     : QDialog(parent), m_listener(listener) {
-    setWindowTitle("ESP32 Ubuntu Notifier - 設定");
+    setWindowTitle("ESP32 Ubuntu Notifier - Settings");
     resize(450, 350);
 
     QSettings settings("ESP32Notifier", "Config");
@@ -21,18 +21,18 @@ SettingsDialog::SettingsDialog(NotificationListener *listener, QWidget *parent)
     m_portSpinBox->setRange(1, 65535);
     m_portSpinBox->setValue(currentPort);
 
-    m_autostartCheckBox = new QCheckBox("ログイン時に自動実行する (Autostart)", this);
+    m_autostartCheckBox = new QCheckBox("Launch automatically at login (Autostart)", this);
     m_autostartCheckBox->setChecked(AutostartManager::isAutostartEnabled());
 
     m_logTextEdit = new QTextEdit(this);
     m_logTextEdit->setReadOnly(true);
 
-    m_testButton = new QPushButton("テスト通知送信", this);
-    m_saveButton = new QPushButton("保存して閉じる", this);
+    m_testButton = new QPushButton("Send Test Notification", this);
+    m_saveButton = new QPushButton("Save & Close", this);
 
     QFormLayout *formLayout = new QFormLayout();
-    formLayout->addRow("ESP32 IPアドレス:", m_ipLineEdit);
-    formLayout->addRow("TCPポート番号:", m_portSpinBox);
+    formLayout->addRow("ESP32 IP Address:", m_ipLineEdit);
+    formLayout->addRow("TCP Port:", m_portSpinBox);
     formLayout->addRow(m_autostartCheckBox);
 
     QHBoxLayout *btnLayout = new QHBoxLayout();
@@ -42,7 +42,7 @@ SettingsDialog::SettingsDialog(NotificationListener *listener, QWidget *parent)
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addLayout(formLayout);
-    mainLayout->addWidget(new QLabel("ログ出力:", this));
+    mainLayout->addWidget(new QLabel("Log Output:", this));
     mainLayout->addWidget(m_logTextEdit);
     mainLayout->addLayout(btnLayout);
 
@@ -64,7 +64,7 @@ void SettingsDialog::saveSettings() {
     bool enableAutostart = m_autostartCheckBox->isChecked();
 
     if (ip.isEmpty()) {
-        QMessageBox::warning(this, "エラー", "IPアドレスを入力してください。");
+        QMessageBox::warning(this, "Error", "Please enter an IP address.");
         return;
     }
 
@@ -79,12 +79,12 @@ void SettingsDialog::saveSettings() {
 
     AutostartManager::setAutostartEnabled(enableAutostart);
 
-    QMessageBox::information(this, "設定保存", "設定を保存しました。");
+    QMessageBox::information(this, "Settings Saved", "Settings saved successfully.");
     accept();
 }
 
 void SettingsDialog::sendTestNotification() {
     if (m_listener) {
-        m_listener->processNotification("テスト通知", "C++/Qt版からのテスト送信です");
+        m_listener->processNotification("Test Notification", "Test notification sent from Qt C++ app.");
     }
 }
